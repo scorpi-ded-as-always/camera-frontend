@@ -1,16 +1,29 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>MeowCV Live</title>
+
   <style>
-    body { margin: 0; background: black; overflow: hidden; }
-    video { width: 100vw; height: 100vh; object-fit: cover; }
+    body {
+      margin: 0;
+      background: black;
+      overflow: hidden;
+    }
+
+    video {
+      width: 100vw;
+      height: 100vh;
+      object-fit: cover;
+    }
+
     #cat {
       position: absolute;
       bottom: 20px;
       right: 20px;
       width: 160px;
+      z-index: 10;
     }
   </style>
 </head>
@@ -19,27 +32,42 @@
 <video id="video" autoplay playsinline muted></video>
 <img id="cat" src="assets/larry.jpeg" />
 
+<!-- Socket.IO -->
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+
+<!-- MediaPipe -->
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 
 <script type="module">
+/* =========================
+   IMPORT MEOWCV LOGIC
+========================= */
 import { getCatReaction } from "./meowcv.js";
 
+/* =========================
+   CONFIG
+========================= */
 const SERVER_URL = "https://camera-signaling-server.onrender.com";
-
 const video = document.getElementById("video");
 const catImg = document.getElementById("cat");
+
+/* =========================
+   SOCKET
+========================= */
 const socket = io(SERVER_URL);
 
-// 1️⃣ Get camera stream ONCE
+/* =========================
+   CAMERA (SINGLE SOURCE)
+========================= */
 const stream = await navigator.mediaDevices.getUserMedia({
   video: { facingMode: "user" },
   audio: false
 });
 video.srcObject = stream;
 
-// 2️⃣ Setup WebRTC (SEND STREAM)
+/* =========================
+   WEBRTC (SEND STREAM)
+========================= */
 const pc = new RTCPeerConnection({
   iceServers: [
     { urls: "stun:stun.l.google.com:19302" },
@@ -49,8 +77,8 @@ const pc = new RTCPeerConnection({
 
 stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
-pc.onicecandidate = e => {
-  if (e.candidate) socket.emit("ice", e.candidate);
+pc.onicecandidate = event => {
+  if (event.candidate) socket.emit("ice", event.candidate);
 };
 
 socket.on("answer", answer => {
@@ -65,10 +93,12 @@ const offer = await pc.createOffer();
 await pc.setLocalDescription(offer);
 socket.emit("offer", offer);
 
-// 3️⃣ Setup MediaPipe (READ SAME STREAM)
+/* =========================
+   MEDIAPIPE (SAFE MODE)
+========================= */
 const faceMesh = new FaceMesh({
-  locateFile: f =>
-    `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}`
+  locateFile: file =>
+    `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
 });
 
 faceMesh.setOptions({
@@ -80,20 +110,23 @@ faceMesh.setOptions({
 
 faceMesh.onResults(results => {
   if (!results.multiFaceLandmarks) return;
-  const cat = getCatReaction(results.multiFaceLandmarks[0]);
+
+  const landmarks = results.multiFaceLandmarks[0];
+  const cat = getCatReaction(landmarks);
   catImg.src = `assets/${cat}`;
 });
 
-const camera = new Camera(video, {
-  onFrame: async () => {
+/* =========================
+   THROTTLED FRAME LOOP
+   (MOBILE SAFE)
+========================= */
+setInterval(async () => {
+  if (video.readyState >= 2) {
     await faceMesh.send({ image: video });
-  },
-  width: 640,
-  height: 480
-});
-camera.start();
+  }
+}, 100); // 10 FPS
+
 </script>
 
 </body>
 </html>
-
