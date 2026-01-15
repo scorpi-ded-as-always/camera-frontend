@@ -1,35 +1,61 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Live User Camera Feed</title>
+
   <style>
     body {
       margin: 0;
       background: black;
       color: white;
+      font-family: Arial, sans-serif;
       text-align: center;
     }
+
+    h2 {
+      margin: 10px 0;
+    }
+
     video {
       width: 100vw;
-      height: 100vh;
+      height: calc(100vh - 50px);
       object-fit: contain;
+      background: black;
     }
   </style>
 </head>
 <body>
 
 <h2>Live User Camera Feed</h2>
-<video id="video" autoplay playsinline></video>
+<video id="remoteVideo" autoplay playsinline></video>
 
+<!-- Socket.IO -->
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+
 <script>
+/* =========================
+   CONFIG
+========================= */
 const SERVER_URL = "https://camera-signaling-server.onrender.com";
 
-const socket = io(SERVER_URL);
-const video = document.getElementById("video");
+/* =========================
+   ELEMENTS
+========================= */
+const video = document.getElementById("remoteVideo");
 
-// 🔑 RTCPeerConnection with STUN
+/* =========================
+   SOCKET
+========================= */
+const socket = io(SERVER_URL);
+
+// 🔔 Tell sender we are ready
+socket.emit("viewer-ready");
+
+/* =========================
+   WEBRTC (RECEIVER ONLY)
+========================= */
 const pc = new RTCPeerConnection({
   iceServers: [
     { urls: "stun:stun.l.google.com:19302" },
@@ -37,22 +63,27 @@ const pc = new RTCPeerConnection({
   ]
 });
 
-// ✅ RECEIVE REMOTE VIDEO
+// 📥 Receive remote video
 pc.ontrack = event => {
-  console.log("📹 Track received");
+  console.log("📹 Remote track received");
   video.srcObject = event.streams[0];
 };
 
-// 🔁 ICE
+// ❄ ICE candidates → server
 pc.onicecandidate = event => {
   if (event.candidate) {
     socket.emit("ice", event.candidate);
   }
 };
 
-// 🔥 RECEIVE OFFER → CREATE ANSWER
+/* =========================
+   SIGNALING
+========================= */
+
+// 📨 Receive offer → answer
 socket.on("offer", async offer => {
   console.log("📨 Offer received");
+
   await pc.setRemoteDescription(offer);
 
   const answer = await pc.createAnswer();
@@ -61,12 +92,12 @@ socket.on("offer", async offer => {
   socket.emit("answer", answer);
 });
 
-// 🔁 RECEIVE ICE
+// ❄ Receive ICE from sender
 socket.on("ice", async candidate => {
   try {
     await pc.addIceCandidate(candidate);
-  } catch (e) {
-    console.error(e);
+  } catch (err) {
+    console.error("ICE error:", err);
   }
 });
 </script>
