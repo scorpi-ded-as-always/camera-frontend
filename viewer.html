@@ -27,7 +27,13 @@ const SERVER_URL = "https://camera-signaling-server.onrender.com";
 const socket = io(SERVER_URL);
 
 const video = document.getElementById("remoteVideo");
-const pc = new RTCPeerConnection();
+const pc = new RTCPeerConnection({
+  iceServers: [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" }
+  ]
+});
+
 
 pc.ontrack = e => {
   video.srcObject = e.streams[0];
@@ -52,3 +58,4 @@ socket.on("ice", candidate => {
 
 </body>
 </html>
+
