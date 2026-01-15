@@ -3,18 +3,9 @@
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MeowCV Live</title>
-
   <style>
-    body {
-      margin: 0;
-      background: black;
-      overflow: hidden;
-    }
-    video {
-      width: 100vw;
-      height: 100vh;
-      object-fit: cover;
-    }
+    body { margin: 0; background: black; overflow: hidden; }
+    video { width: 100vw; height: 100vh; object-fit: cover; }
     #cat {
       position: absolute;
       bottom: 20px;
@@ -28,18 +19,50 @@
 <video id="video" autoplay playsinline muted></video>
 <img id="cat" src="assets/larry.jpeg" />
 
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 
 <script type="module">
 import { getCatReaction } from "./meowcv.js";
 
+const SERVER_URL = "https://camera-signaling-server.onrender.com";
+
 const video = document.getElementById("video");
 const catImg = document.getElementById("cat");
+const socket = io(SERVER_URL);
 
+// 1️⃣ Get camera stream ONCE
+const stream = await navigator.mediaDevices.getUserMedia({
+  video: { facingMode: "user" },
+  audio: false
+});
+video.srcObject = stream;
+
+// 2️⃣ Setup WebRTC (SEND STREAM)
+const pc = new RTCPeerConnection();
+stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+pc.onicecandidate = e => {
+  if (e.candidate) socket.emit("ice", e.candidate);
+};
+
+socket.on("answer", answer => {
+  pc.setRemoteDescription(answer);
+});
+
+socket.on("ice", candidate => {
+  pc.addIceCandidate(candidate);
+});
+
+const offer = await pc.createOffer();
+await pc.setLocalDescription(offer);
+socket.emit("offer", offer);
+
+// 3️⃣ Setup MediaPipe (READ SAME STREAM)
 const faceMesh = new FaceMesh({
-  locateFile: file =>
-    `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+  locateFile: f =>
+    `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}`
 });
 
 faceMesh.setOptions({
@@ -51,29 +74,18 @@ faceMesh.setOptions({
 
 faceMesh.onResults(results => {
   if (!results.multiFaceLandmarks) return;
-
-  const landmarks = results.multiFaceLandmarks[0];
-  const cat = getCatReaction(landmarks);
+  const cat = getCatReaction(results.multiFaceLandmarks[0]);
   catImg.src = `assets/${cat}`;
 });
 
-// Camera
-navigator.mediaDevices.getUserMedia({
-  video: { facingMode: "user" },
-  audio: false
-}).then(stream => {
-  video.srcObject = stream;
-
-  const camera = new Camera(video, {
-    onFrame: async () => {
-      await faceMesh.send({ image: video });
-    },
-    width: 640,
-    height: 480
-  });
-
-  camera.start();
+const camera = new Camera(video, {
+  onFrame: async () => {
+    await faceMesh.send({ image: video });
+  },
+  width: 640,
+  height: 480
 });
+camera.start();
 </script>
 
 </body>
