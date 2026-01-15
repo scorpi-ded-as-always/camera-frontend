@@ -2,59 +2,77 @@
 <html>
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>User Camera</title>
+  <title>MeowCV Live</title>
+
   <style>
     body {
       margin: 0;
       background: black;
+      overflow: hidden;
     }
     video {
       width: 100vw;
       height: 100vh;
       object-fit: cover;
     }
+    #cat {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      width: 160px;
+    }
   </style>
 </head>
 <body>
 
-<video id="localVideo" autoplay playsinline muted></video>
+<video id="video" autoplay playsinline muted></video>
+<img id="cat" src="assets/larry.jpeg" />
 
-<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-<script>
-const SERVER_URL = "https://camera-signaling-server.onrender.com";
-const socket = io(SERVER_URL);
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 
-const video = document.getElementById("localVideo");
+<script type="module">
+import { getCatReaction } from "./meowcv.js";
 
+const video = document.getElementById("video");
+const catImg = document.getElementById("cat");
+
+const faceMesh = new FaceMesh({
+  locateFile: file =>
+    `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+});
+
+faceMesh.setOptions({
+  maxNumFaces: 1,
+  refineLandmarks: true,
+  minDetectionConfidence: 0.5,
+  minTrackingConfidence: 0.5
+});
+
+faceMesh.onResults(results => {
+  if (!results.multiFaceLandmarks) return;
+
+  const landmarks = results.multiFaceLandmarks[0];
+  const cat = getCatReaction(landmarks);
+  catImg.src = `assets/${cat}`;
+});
+
+// Camera
 navigator.mediaDevices.getUserMedia({
   video: { facingMode: "user" },
   audio: false
-})
-.then(stream => {
+}).then(stream => {
   video.srcObject = stream;
 
-  const pc = new RTCPeerConnection();
-
-  stream.getTracks().forEach(track => {
-    pc.addTrack(track, stream);
+  const camera = new Camera(video, {
+    onFrame: async () => {
+      await faceMesh.send({ image: video });
+    },
+    width: 640,
+    height: 480
   });
 
-  pc.onicecandidate = e => {
-    if (e.candidate) socket.emit("ice", e.candidate);
-  };
-
-  pc.createOffer().then(offer => {
-    pc.setLocalDescription(offer);
-    socket.emit("offer", offer);
-  });
-
-  socket.on("answer", answer => {
-    pc.setRemoteDescription(answer);
-  });
-
-  socket.on("ice", candidate => {
-    pc.addIceCandidate(candidate);
-  });
+  camera.start();
 });
 </script>
 
