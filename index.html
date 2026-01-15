@@ -89,9 +89,14 @@ socket.on("ice", candidate => {
   pc.addIceCandidate(candidate);
 });
 
-const offer = await pc.createOffer();
-await pc.setLocalDescription(offer);
-socket.emit("offer", offer);
+socket.on("viewer-ready", async () => {
+  console.log("👀 Viewer ready — creating offer");
+
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  socket.emit("offer", offer);
+});
+
 
 /* =========================
    MEDIAPIPE (SAFE MODE)
@@ -130,3 +135,4 @@ setInterval(async () => {
 
 </body>
 </html>
+
