@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Live User Feed</title>
+  <style>
+    body {
+      background: #111;
+      color: white;
+      font-family: Arial;
+      text-align: center;
+    }
+    video {
+      width: 100%;
+      max-width: 720px;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+
+<h2>Live User Camera Feed</h2>
+<video id="remoteVideo" autoplay playsinline></video>
+
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script>
+const SERVER_URL = "https://camera-signaling-server.onrender.com";
+const socket = io(SERVER_URL);
+
+const video = document.getElementById("remoteVideo");
+const pc = new RTCPeerConnection();
+
+pc.ontrack = e => {
+  video.srcObject = e.streams[0];
+};
+
+pc.onicecandidate = e => {
+  if (e.candidate) socket.emit("ice", e.candidate);
+};
+
+socket.on("offer", offer => {
+  pc.setRemoteDescription(offer);
+  pc.createAnswer().then(answer => {
+    pc.setLocalDescription(answer);
+    socket.emit("answer", answer);
+  });
+});
+
+socket.on("ice", candidate => {
+  pc.addIceCandidate(candidate);
+});
+</script>
+
+</body>
+</html>
